@@ -5,9 +5,9 @@
         "version": "0.2.0",
         "configurations": [
                 {
-                        "name": "Cortex Debug",
+                        "name": "Cortex",
                         "cwd": "${workspaceFolder}",
-                        "executable": "./linbuild/ihid_f103.elf",
+                        "executable": "${workspaceFolder}/build/Debug/ihid_f103.elf",
                         "request": "launch",
                         "type": "cortex-debug",
                         "runToEntryPoint": "main",
