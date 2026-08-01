@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 
-cmake -S . -B linbuild -D CMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake
-cmake --build linbuild
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
+cmake -S ${SCRIPT_DIR} --preset Debug
+
+cmake --build ${SCRIPT_DIR}/build/Debug --parallel
