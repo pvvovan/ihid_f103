@@ -1,0 +1,3 @@
+[submodule "AhuraRTOS"]
+	path = AhuraRTOS
+	url = ../AhuraRTOS.git
