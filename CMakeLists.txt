@@ -69,3 +69,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
     ahura_kernel
 )
+
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES LINK_DEPENDS ${CMAKE_SOURCE_DIR}/STM32F103xx_FLASH.ld)
