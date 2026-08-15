@@ -1,3 +1,0 @@
-[submodule "AhuraRTOS/kernel"]
-	path = AhuraRTOS/kernel
-	url = https://github.com/AhuraRTOS/ahura_kernel.git
