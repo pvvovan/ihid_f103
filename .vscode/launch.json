@@ -16,7 +16,8 @@
                                 "interface/stlink.cfg",
                                 "target/stm32f1x.cfg"
                         ],
-                        "gdbPath": "gdb-multiarch"
+                        "gdbPath": "gdb-multiarch",
+                        "svdFile": "${workspaceFolder}/STM32F103.svd",
                 }
         ]
 }
