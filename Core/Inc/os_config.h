@@ -1,5 +1,5 @@
 /**
- * @file os_config_template.h
+ * @file os_config.h
  * @brief Template for the application's os_config.h - every kernel option at its default value.
  *
  * NOT included by the kernel: copy it into the application source tree as os_config.h, adjust the
@@ -13,18 +13,19 @@
  *   PART 1  CORE - always compiled in. Set these first.
  *   PART 2  OPTIONAL FEATURES - one section per feature, each holding its _ENABLE switch with the
  *           sizing that switch controls. Same order as PART 2 of ahura.h.
- *   PART 3  PLATFORM - target properties (vector name, TrustZone, core count, tickless).
+ *   PART 3  PLATFORM - target properties (TrustZone, core count, tickless). The target's own
+ *           facts - PendSV vector name, spinlock backend - belong to the SoC package instead.
  *
- * Three options are marked OPTIONAL where they appear - OS_CONFIG_TICK_SOURCE,
- * OS_CONFIG_ARCH_PENDSV_HANDLER and OS_CONFIG_ARCH_VECTOR_CHECK. Each is a name or a yes/no
+ * Two options are marked OPTIONAL where they appear - OS_CONFIG_TICK_SOURCE and
+ * OS_CONFIG_ARCH_VECTOR_CHECK. Each is a name or a yes/no
  * diagnostic the kernel can default correctly on its own, so a config predating them still builds
  * and behaves identically. Everything else is mandatory: a missing sizing or feature switch would
  * read as 0 in an #if and silently disable or misconfigure something, which is why the kernel
  * rejects it outright instead.
  *
  * @copyright (c) 2026 Ahura Project Contributors
- *            SPDX-License-Identifier: MIT
- *            See LICENSE.md in the project root for the full license text.
+ *            SPDX-License-Identifier: GPL-3.0-or-later
+ *            See LICENSE in the project root for the full license text.
  */
 
 #ifndef OS_CONFIG_H
@@ -114,10 +115,16 @@
 
 /* How many tasks the APPLICATION may have. The kernel's own service tasks are
  * NOT counted here: it reserves their slots on top of this number, so enabling
- * the log or the work queue never costs the application a task, and this value
+ * the log or the timer service never costs the application a task, and this value
  * is exactly what os_task_create() will accept before returning
- * OS_STATUS_FULL. */
-#define OS_CONFIG_MAX_USER_TASKS            6U
+ * OS_ERR_FULL.
+ *
+ * 8 rather than something smaller because the self-test suite's multi-core
+ * section runs on it: the test task, the two heartbeat workers it parks, and up
+ * to five concurrent stress helpers (see doc/testing.md). A smaller value is
+ * fine for an application that never runs the suite, and then the suite simply
+ * fails its SMP section with OS_ERR_FULL. */
+#define OS_CONFIG_MAX_USER_TASKS            8U
 
 /**
  * Minimum stack size in bytes. Must leave room for one hardware exception
@@ -146,12 +153,12 @@
 */
 
 /* os_init() unconditionally creates and starts a default application task running os_main(),
- * which the application must define in its own os_main.c (copied from os_main_template.c) -
+ * which the application must define in its own os_main.c (copied from kernel/template/os_main.c) -
  * the kernel ships no stub, so a missing one is a link error. See the README "Default
  * application task" section. Not created when OS_CONFIG_TEST_ENABLE (PART 2) is 1: the
  * self-test task runs alone instead, and no os_main.c is needed at all.
  *
- * os_init() discards the creation status for this task (void, matching the work/timer
+ * os_init() discards the creation status for this task (void, matching the timer
  * system-init calls) - an out-of-range priority (must be
  * OS_TASK_PRIO_1_LOWEST..OS_TASK_PRIO_30_HIGHEST) or a too-small stack (must be at least
  * OS_CONFIG_MIN_STACK_SIZE above) fails SILENTLY: the firmware still builds, boots and
@@ -192,7 +199,7 @@
  * PART 2 - OPTIONAL FEATURES (1 = compiled in, 0 = compiled out)
  * ***********************************************************************************************************
  *
- * Disabling a feature removes its code, its API, and - for timer/work/log -
+ * Disabling a feature removes its code, its API, and - for timer/log -
  * its kernel service task and stack. Each section below carries its own
  * sizing, which is dead weight to reason about once the switch is 0.
 */
@@ -230,7 +237,6 @@
  * task-table slot the kernel reserves for itself - not one of
  * OS_CONFIG_MAX_USER_TASKS - and runs the callbacks on the stack sized here. */
 #define OS_CONFIG_TIMER_ENABLE              1U
-#define OS_CONFIG_MAX_TIMERS                8U
 #define OS_CONFIG_TIMER_STACK_SIZE          512U
 
 /* Priority of the timer service task, and so of every timer callback.
@@ -246,41 +252,14 @@
 #define OS_CONFIG_TIMER_PRIORITY            OS_TASK_PRIO_MAX
 
 /* Which cores the timer task (and so the timer callbacks) may run on:
- * a core-affinity bitmask, 0 = any core. Only meaningful when
- * OS_CONFIG_CORE_COUNT (PART 3) > 1; keep 0 on single-core builds. */
-#define OS_CONFIG_TIMER_CORE_AFFINITY       0U
-
-/*
- * ***********************************************************************************************************
- * Work queue
- * ***********************************************************************************************************
-*/
-
-/* Work handlers run on the kernel work task (tsk_work), which occupies one
- * task-table slot the kernel reserves for itself - not one of
- * OS_CONFIG_MAX_USER_TASKS - and runs the handlers on the stack sized here. */
-#define OS_CONFIG_WORK_ENABLE               1U
-#define OS_CONFIG_MAX_WORKS                 8U
-#define OS_CONFIG_WORK_STACK_SIZE           512U
-
-/* Priority of the work service task, and so of every work handler. Same rule as
- * OS_CONFIG_TIMER_PRIORITY above: OS_TASK_PRIO_MAX by default so deferred work runs promptly,
- * lower it when a user task should outrank it, and it stays a kernel service task - protected
- * from os_task_pause and os_task_delete - at any setting. */
-#define OS_CONFIG_WORK_PRIORITY             OS_TASK_PRIO_MAX
-
-/* Largest payload os_work_submit may copy into a slot, in bytes. The submitted
- * data is copied, so nothing the caller owns has to outlive the deferred call;
- * the cost is OS_CONFIG_MAX_WORKS * this many bytes of RAM, plus this much again
- * on the work task's stack while a handler runs. A submission larger than this
- * is refused with OS_STATUS_INVALID_ARG. To hand over something bigger, submit a
- * POINTER to it (sizeof of the pointer) and keep the target alive yourself. */
-#define OS_CONFIG_WORK_PAYLOAD_SIZE         4U
-
-/* Which cores the work task (and so the work handlers) may run on: a
- * core-affinity bitmask, 0 = any core. Only meaningful when
- * OS_CONFIG_CORE_COUNT (PART 3) > 1; keep 0 on single-core builds. */
-#define OS_CONFIG_WORK_CORE_AFFINITY        0U
+ * a core-affinity bitmask; OS_TASK_CORE_ANY (0) = any core.
+ *
+ * Default OS_TASK_CORE(0) because core 0 owns the time base and the priority
+ * relationship between timer callbacks and the application's core-0 tasks
+ * then means what it says. Only meaningful when OS_CONFIG_CORE_COUNT
+ * (PART 3) > 1; OS_TASK_CORE(0) is accepted - and ignored - on a single-core
+ * build, so one value serves both. */
+#define OS_CONFIG_TIMER_CORE_AFFINITY       OS_TASK_CORE(0)
 
 /*
  * ***********************************************************************************************************
@@ -347,7 +326,23 @@
  * A failure calls os_assert_failed_cb(), which the application must define, then parks the
  * core with interrupts masked so a debugger lands on the cause. Assertions only ADD checks:
  * every API still returns the same status either way, so turning this off leaves behavior
- * unchanged. */
+ * unchanged.
+ *
+ * This switch also carries MUTEX DEADLOCK DETECTION, which has no switch of its own because an
+ * assertion is its only way to report. When a task is about to block FOREVER on a locked mutex,
+ * the kernel follows the wait chain - who owns it, what is that owner itself blocked on - and
+ * asserts if it arrives back at the caller, which is a deadlock. Priority inheritance cannot
+ * prevent that (it fixes when a waiting task runs, not the ORDER two tasks took two locks in), so
+ * catching it as it forms is the difference between a debugger stopping on the guilty call and a
+ * board that silently stops with several tasks blocked forever.
+ *
+ * A lock with a timeout is never reported and never appears inside a reported cycle: it will give
+ * up, so it is not deadlocked and it breaks any cycle it is in. Only a cycle in which EVERY task
+ * waits forever is real, and only that is asserted on.
+ *
+ * Since an assertion carries just a file and a line, the mutexes and task names involved are left
+ * in os_task_deadlock_report for the debugger to read after the halt. Costs that record, one
+ * pointer per task, and a short walk on contended unbounded locks; at 0, none of it exists. */
 #define OS_CONFIG_ASSERT_ENABLE             1U
 
 /*
@@ -377,12 +372,19 @@
  *              lines are truncated, never overflowed.
  * TASK_*       tsk_log, which drains the ring and calls os_log_output_cb(). Its stack must hold
  *              that callback. Keep the priority low: logging must never preempt real work.
+ *              CORE_AFFINITY places the drain task on multi-core builds. Default
+ *              OS_TASK_CORE(0): a fixed core keeps the drain's priority relationship to that
+ *              core's tasks meaningful - which the self-test's overrun checks depend on (they
+ *              flood from core 0 and count on tsk_log being starved there). OS_TASK_CORE_ANY
+ *              lets it follow the work instead, but the suite then fails its drop checks on
+ *              multi-core. OS_TASK_CORE(0) is accepted - and ignored - on a single-core build.
  */
 #define OS_CONFIG_LOG_LEVEL                 OS_LOG_LEVEL_INFO
 #define OS_CONFIG_LOG_BUFFER_SIZE           1024U
 #define OS_CONFIG_LOG_LINE_MAX              128U
 #define OS_CONFIG_LOG_TASK_STACK_SIZE       512U
 #define OS_CONFIG_LOG_TASK_PRIORITY         OS_TASK_PRIO_1
+#define OS_CONFIG_LOG_CORE_AFFINITY         OS_TASK_CORE(0)
 
 /*
  * ***********************************************************************************************************
@@ -411,32 +413,15 @@
 /*
  * ***********************************************************************************************************
  * Exception vector the kernel owns
+ *
+ * The NAME of that vector is not here: it is a fact about the target's
+ * startup code, so the SoC package sets it (OS_CONFIG_ARCH_PENDSV_HANDLER,
+ * see doc/soc.md). It defaults to the CMSIS-Pack name PendSV_Handler, which
+ * is what essentially every vendor startup file uses. Defining it here as
+ * well would override the SoC package silently, because this file is read
+ * after the build system's -D.
  * ***********************************************************************************************************
 */
-
-/**
- * The symbol name the kernel gives its PendSV handler.
- *
- * PendSV is the ONE vector the kernel must own, because a context switch has to
- * BE the exception entry point - it manipulates the frame the hardware pushed
- * and returns through EXC_RETURN, neither of which survives an ordinary C call.
- * SysTick is routed by the application (or replaced entirely, see
- * OS_CONFIG_TICK_SOURCE in PART 1), and SVC is left completely alone.
- *
- * PendSV_Handler is the CMSIS-Pack convention, which is what essentially every
- * vendor startup file uses - ST, Nordic, NXP, TI, Silicon Labs, Renesas,
- * Microchip, Infineon - so the default is correct on all of them and the vast
- * majority of projects never touch this. Change it only when the vector table
- * calls the entry something else: a hand-written startup file, a non-CMSIS
- * environment, or a bootloader's own table.
- *
- * Whatever name is set here, exactly one definition of it may exist in the
- * link. If a vendor IDE also generates one (STM32CubeMX does), stop it doing
- * so or delete it - see the kernel README, "Integration".
- *
- * This option is OPTIONAL: leaving it out selects PendSV_Handler.
- */
-#define OS_CONFIG_ARCH_PENDSV_HANDLER       PendSV_Handler
 
 /**
  * Check at boot that the live vector table really routes PendSV to the kernel
@@ -496,39 +481,25 @@
  * Number of cores that schedule tasks (max 31). Each runs its own PendSV and idle task and pulls
  * from the shared ready lists honoring core_affinity; core 0 owns the time base, and secondary
  * cores enter through os_core_start(). The SoC layer must supply os_arch_core_id_get_cb(), the IPI
- * callback, and - on cores without LDREX/STREX - the spinlock callbacks. See os_cb_template.c.
+ * callback, and - on cores without LDREX/STREX - the spinlock callbacks. A SoC
+ * package under kernel/soc/ supplies all three; see doc/soc.md.
  *
  * Two preconditions the kernel cannot verify, both SoC properties, before setting this above 1:
  *
  *   1. Global exclusive monitor. The inter-core spinlock uses LDREX/STREX, which only excludes
  *      another core when the interconnect implements a GLOBAL monitor for that address AND the
  *      address is Shareable-mapped. Without both, two cores can succeed at once and the lock
- *      silently stops excluding anything. OS_CONFIG_SPINLOCK_SOC_BACKEND routes it
- *      through your own hardware semaphore instead.
+ *      silently stops excluding anything. The SoC package's
+ *      OS_CONFIG_SPINLOCK_SOC_BACKEND routes it through a hardware semaphore instead.
  *   2. Cache coherency. Cortex-M has none between cores, and DSB is not cache maintenance. Every
  *      shared kernel object (ready/delay lists, the registries, os_task_current[], the spinlock
  *      word) must sit in a non-cacheable or coherent region - typically the whole kernel's shared
  *      statics placed in one non-cacheable MPU region by the linker script. No portable fallback.
  *
- * Service tasks are placed with OS_CONFIG_WORK_CORE_AFFINITY / OS_CONFIG_TIMER_CORE_AFFINITY.
+ * Service tasks are placed with OS_CONFIG_TIMER_CORE_AFFINITY / OS_CONFIG_LOG_CORE_AFFINITY.
  */
 
 #define OS_CONFIG_CORE_COUNT                1U
-
-/**
- * 0 (default): the kernel spinlock uses the built-in LDREX/STREX backend on
- * cores that have it (all v7-M/v8-M cores); ARMv6-M multi-core SoCs (no
- * LDREX/STREX) always use the callback backend regardless of this setting.
- * 1: force the callback backend even on an exclusives-capable core - set
- * this when your SoC's interconnect has no GLOBAL exclusive monitor for the
- * spinlock's memory, or that memory cannot be marked Shareable (see the
- * OS_CONFIG_CORE_COUNT precondition notes above); implement
- * os_arch_spinlock_acquire_cb/_release_cb (os_cb_template.c) against your
- * SoC's hardware semaphore in that case. Only meaningful when
- * OS_CONFIG_CORE_COUNT > 1; keep 0 on single-core builds.
- */
-
-#define OS_CONFIG_SPINLOCK_SOC_BACKEND      0U
 
 /*
  * ***********************************************************************************************************
@@ -538,7 +509,6 @@
 
 #define OS_CONFIG_TICKLESS_ENABLE           0U
 #define OS_CONFIG_TICKLESS_MIN_IDLE         2U
-#define OS_CONFIG_LPTIM_CLOCK_HZ            32768U
 #define OS_CONFIG_MAX_SUPPRESSED_TICKS      0x00FFFFFFUL
 
 #endif /* OS_CONFIG_H */
